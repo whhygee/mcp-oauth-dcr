@@ -21,3 +21,16 @@ type Config struct {
 	// TokenStore persists proxy tokens for DCR validation.
 	TokenStore TokenStore
 }
+
+var (
+	// AllowedRedirectSchemes defines URL schemes allowed for MCP client callbacks.
+	// Custom schemes stay on the user's machine, making them safe for OAuth redirects.
+	AllowedRedirectSchemes = []string{
+		"cursor",
+		"vscode",
+		"vscode-insiders",
+	}
+
+	// DefaultRedirectURL is the fallback when no redirect_uri is provided in the callback.
+	DefaultRedirectURL = "cursor://oauth/callback"
+)

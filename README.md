@@ -21,7 +21,7 @@ The library also serves the `.well-known` metadata documents that MCP clients us
 
 ```go
 import (
-    "github.com/whygee/mcpoauth-github"
+    "github.com/whhygee/mcp-oauth-dcr"
     "golang.org/x/oauth2/github"
 )
 

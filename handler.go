@@ -25,19 +25,6 @@ const (
 	PathAuthorizationServer = "/.well-known/oauth-authorization-server"
 )
 
-var (
-	// AllowedRedirectSchemes defines URL schemes allowed for MCP client callbacks.
-	// Custom schemes stay on the user's machine, making them safe for OAuth redirects.
-	AllowedRedirectSchemes = []string{
-		"cursor",
-		"vscode",
-		"vscode-insiders",
-	}
-
-	// DefaultRedirectURL is the fallback when no redirect_uri is provided in the callback.
-	DefaultRedirectURL = "cursor://oauth/callback"
-)
-
 // Handler implements OAuth 2.0 with Dynamic Client Registration (DCR) for MCP.
 //
 // It acts as a proxy between MCP clients and an OAuth provider that doesn't support DCR.

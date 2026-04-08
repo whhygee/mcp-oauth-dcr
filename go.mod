@@ -1,4 +1,4 @@
-module github.com/whygee/mcpoauth-github
+module github.com/whhygee/mcp-oauth-dcr
 
 go 1.25.5
 
