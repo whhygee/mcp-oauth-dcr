@@ -15,7 +15,8 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// Endpoint paths. Mount handlers at these paths for metadata discovery to work.
+// Endpoint paths. The four OAuth paths are relative to Config.PathPrefix; use
+// Handler.Mount or the Handler path methods to get the effective paths.
 const (
 	PathRegister            = "/oauth/register"
 	PathLogin               = "/oauth/login"
@@ -34,24 +35,59 @@ const (
 type Handler struct {
 	baseURL     string
 	mcpEndpoint string
+	pathPrefix  string
+	successPage string
 	config      *oauth2.Config
 	tokenStore  TokenStore
 }
 
 // NewHandler creates a new OAuth proxy handler.
+// If Config.RedirectURL is empty, it defaults to BaseURL + CallbackPath().
 func NewHandler(c *Config) *Handler {
-	return &Handler{
-		config: &oauth2.Config{
-			ClientID:     c.ClientID,
-			ClientSecret: c.ClientSecret,
-			RedirectURL:  c.RedirectURL,
-			Scopes:       c.Scopes,
-			Endpoint:     c.Endpoint,
-		},
+	h := &Handler{
 		tokenStore:  c.TokenStore,
 		baseURL:     c.BaseURL,
 		mcpEndpoint: c.MCPEndpoint,
+		pathPrefix:  strings.TrimSuffix(c.PathPrefix, "/"),
+		successPage: c.SuccessPage,
 	}
+	if h.successPage == "" {
+		h.successPage = DefaultSuccessPage
+	}
+	redirectURL := c.RedirectURL
+	if redirectURL == "" {
+		redirectURL = c.BaseURL + h.CallbackPath()
+	}
+	h.config = &oauth2.Config{
+		ClientID:     c.ClientID,
+		ClientSecret: c.ClientSecret,
+		RedirectURL:  redirectURL,
+		Scopes:       c.Scopes,
+		Endpoint:     c.Endpoint,
+	}
+	return h
+}
+
+// RegisterPath returns the effective Dynamic Client Registration path.
+func (h *Handler) RegisterPath() string { return h.pathPrefix + PathRegister }
+
+// LoginPath returns the effective authorization path.
+func (h *Handler) LoginPath() string { return h.pathPrefix + PathLogin }
+
+// CallbackPath returns the effective OAuth provider callback path.
+func (h *Handler) CallbackPath() string { return h.pathPrefix + PathCallback }
+
+// TokenPath returns the effective token exchange path.
+func (h *Handler) TokenPath() string { return h.pathPrefix + PathToken }
+
+// Mount registers all six handlers on mux at their effective paths.
+func (h *Handler) Mount(mux *http.ServeMux) {
+	mux.HandleFunc(PathProtectedResource, h.HandleProtectedResourceMetadata)
+	mux.HandleFunc(PathAuthorizationServer, h.HandleAuthorizationServerMetadata)
+	mux.HandleFunc(h.RegisterPath(), h.HandleRegister)
+	mux.HandleFunc(h.LoginPath(), h.HandleLogin)
+	mux.HandleFunc(h.CallbackPath(), h.HandleCallback)
+	mux.HandleFunc(h.TokenPath(), h.HandleToken)
 }
 
 // HandleProtectedResourceMetadata serves the OAuth Protected Resource metadata document.
@@ -68,9 +104,9 @@ func (h *Handler) HandleAuthorizationServerMetadata(w http.ResponseWriter, r *ht
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"issuer":                           h.baseURL,
-		"authorization_endpoint":           h.baseURL + PathLogin,
-		"token_endpoint":                   h.baseURL + PathToken,
-		"registration_endpoint":            h.baseURL + PathRegister,
+		"authorization_endpoint":           h.baseURL + h.LoginPath(),
+		"token_endpoint":                   h.baseURL + h.TokenPath(),
+		"registration_endpoint":            h.baseURL + h.RegisterPath(),
 		"response_types_supported":         []string{"code"},
 		"grant_types_supported":            []string{"authorization_code"},
 		"code_challenge_methods_supported": []string{"S256"},
@@ -207,7 +243,7 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	safeURL := string(jsonURL[1 : len(jsonURL)-1])
 
 	w.Header().Set("Content-Type", "text/html")
-	w.Write(fmt.Appendf(nil, successPage, safeURL))
+	w.Write(fmt.Appendf(nil, h.successPage, safeURL))
 }
 
 // HandleToken exchanges an authorization code for an access token.
@@ -218,7 +254,15 @@ func (h *Handler) HandleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Accept client_secret from either the form body (client_secret_post) or the
+	// Authorization: Basic header (client_secret_basic, the RFC 6749 default).
+	// MCP TypeScript SDK clients such as Claude Code use Basic.
 	clientSecret := r.FormValue("client_secret")
+	if clientSecret == "" {
+		if _, basicSecret, ok := r.BasicAuth(); ok {
+			clientSecret = basicSecret
+		}
+	}
 	if clientSecret == "" || !h.tokenStore.Exists(r.Context(), clientSecret) {
 		slog.Warn("mcpoauth: token exchange failed - invalid proxy token")
 		respond(w, http.StatusUnauthorized, map[string]string{
@@ -294,7 +338,9 @@ func respond(w http.ResponseWriter, status int, data interface{}) {
 	json.NewEncoder(w).Encode(data)
 }
 
-var successPage = `<!doctype html>
+// DefaultSuccessPage is the HTML served after a successful callback when
+// Config.SuccessPage is not set. The single %s receives the client redirect URL.
+const DefaultSuccessPage = `<!doctype html>
 <meta charset="utf-8">
 <title>Authenticated</title>
 <style>

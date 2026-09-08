@@ -13,7 +13,7 @@ This library sits between MCP clients and GitHub (or any OAuth provider), proxyi
 1. **Registration** — MCP client calls `/oauth/register`. Instead of forwarding to GitHub (which would fail), the library generates a random **proxy token** and returns it as the `client_secret`. The real GitHub client secret never leaves your server.
 2. **Authorization** — `/oauth/login` redirects to GitHub's authorize page, forwarding PKCE parameters.
 3. **Callback** — `/oauth/callback` receives GitHub's redirect and bounces the user back to the MCP client (Cursor, VS Code, Claude Code, etc.).
-4. **Token exchange** — `/oauth/token` validates the proxy token, then exchanges the authorization code with GitHub using the real client secret.
+4. **Token exchange** — `/oauth/token` validates the proxy token, then exchanges the authorization code with GitHub using the real client secret. The proxy token is read from the `client_secret` form field (`client_secret_post`) or from the `Authorization: Basic` header (`client_secret_basic`, the RFC 6749 default used by Claude Code).
 
 The library also serves the `.well-known` metadata documents that MCP clients use for discovery.
 
@@ -36,13 +36,20 @@ h := mcpoauth.NewHandler(&mcpoauth.Config{
     TokenStore:   myStore, // you provide this
 })
 
-mux.HandleFunc(mcpoauth.PathProtectedResource, h.HandleProtectedResourceMetadata)
-mux.HandleFunc(mcpoauth.PathAuthorizationServer, h.HandleAuthorizationServerMetadata)
-mux.HandleFunc(mcpoauth.PathRegister, h.HandleRegister)
-mux.HandleFunc(mcpoauth.PathLogin, h.HandleLogin)
-mux.HandleFunc(mcpoauth.PathCallback, h.HandleCallback)
-mux.HandleFunc(mcpoauth.PathToken, h.HandleToken)
+h.Mount(mux)
 ```
+
+`Mount` registers the six handlers. To wire them yourself, use the path methods (`h.RegisterPath()`, `h.LoginPath()`, `h.CallbackPath()`, `h.TokenPath()`) together with `mcpoauth.PathProtectedResource` and `mcpoauth.PathAuthorizationServer`.
+
+If `RedirectURL` is empty it defaults to `BaseURL + h.CallbackPath()`.
+
+### Custom paths
+
+Set `PathPrefix` to mount the four OAuth endpoints under another prefix. `PathPrefix: "/mcp"` gives `/mcp/oauth/register`, `/mcp/oauth/login`, `/mcp/oauth/callback` and `/mcp/oauth/token`. The metadata documents advertise the prefixed paths. The two `.well-known` paths are never prefixed, as RFC 8414 and RFC 9728 require them at the origin root.
+
+### Custom success page
+
+Set `SuccessPage` to replace the HTML shown after the callback. It must contain exactly one `%s`, which receives the JavaScript-escaped redirect URL back to the MCP client. `mcpoauth.DefaultSuccessPage` is the default.
 
 ### TokenStore
 

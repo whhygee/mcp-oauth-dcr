@@ -20,6 +20,15 @@ type Config struct {
 	Scopes []string
 	// TokenStore persists proxy tokens for DCR validation.
 	TokenStore TokenStore
+	// PathPrefix is prepended to the register, login, callback and token paths
+	// (e.g., "/mcp" mounts them at "/mcp/oauth/register" etc.). The .well-known
+	// metadata paths are never prefixed, as required by RFC 8414 and RFC 9728.
+	// Optional; defaults to "".
+	PathPrefix string
+	// SuccessPage is the HTML served after a successful callback. It must contain
+	// exactly one %s verb, which receives the JavaScript-escaped client redirect URL.
+	// Optional; defaults to DefaultSuccessPage.
+	SuccessPage string
 }
 
 var (
